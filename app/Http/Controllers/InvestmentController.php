@@ -8,6 +8,9 @@ use App\Project;
 use App\Investment;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Notification;
+use App\Notifications\Admin\RunningQueue;
+use App\Notifications\Admin\Check\MissingInvestment;
 
 class InvestmentController extends Controller
 {
@@ -20,7 +23,10 @@ class InvestmentController extends Controller
     public function index()
     {
 
-      $projects = Project::where('status', 3)->get();
+      Notification::route('slack', env('LOG_SLACK_WEBHOOK_URL'))
+                   ->notify(new RunningQueue('MissingInvestment', 0));
+
+      $projects = Project::where('status', 2)->get();
       $missmatches = [];
 
       foreach ($projects as $project) {
@@ -29,7 +35,7 @@ class InvestmentController extends Controller
         $missmatch = [];
         // $payments = [];
         // dd($project->payments->where('status', 'reserved'));
-        foreach ($project->payments->where('status', 'confirmed') as $payment) {
+        foreach ($project->payments->where('status', 'reserved') as $payment) {
            $userID = $payment->user_id;
            $message = 'OK';
 
@@ -48,61 +54,52 @@ class InvestmentController extends Controller
               // dd('nerasta'.$payment->user_id);
               $match = false;
               $investment = 0;
-              $message = 'investment not found';
+              $message = 'Investment not found, fix immediately!';
+              $investments[$userID]['type'] = 'error';
             } else { // Investment found, check if SUM is OK
               $match = ($investments[$userID]['total_payments'] === $investment->amount) ? true : false;
               $investment = $investment->amount;
-              if(!$match) { $message = 'investment missmatch'; }
+              if(!$match) {
+                $message = 'Investment missmatch, check if manual payment was done.';
+                $investments[$userID]['type'] = 'warning';
+               }
             }
 
 
            $investments[$userID]['investment'] = $investment;
            $investments[$userID]['match'] = $match;
            $investments[$userID]['message'] = $message;
+           $investments[$userID]['project'] = $project;
+           $investments[$userID]['user'] = $payment->user;
 
              // dump($missmatch);
         }
 
         foreach ($investments as $investment) {
+
           if(!$investment['match']) {
             $missmatch[] = $investment;
+            Notification::route('slack', env('LOG_SLACK_WEBHOOK_URL'))
+                         ->notify(new MissingInvestment($investment));
+
+
           }
         }
-
+        // break;
        if(count($missmatch) > 0) {$missmatches[] = $missmatch;}
 
 
-        // $missmatch = [];
-        // foreach ($investments as $investment) {
-        //   if(!$investment['match']) {
-        //     $missmatch[] = $investment;
-        //   }
-        // }
-        // foreach ($project->investments as $investment) {
-        //   $paymentSum = 0;
-        //
-        //   $payments = PaymentPaysera::where('project_id', $project->id)
-        //                               ->where('user_id', $investment->user_id)
-        //                               ->where('status', 'reserved')->get();
-        //
-        //   foreach ($payments as $payment) {
-        //     $paymentSum += $payment->investment;
-        //     $investments[$investment->user_id]['payments'][] = $payment->investment;
-        //   }
-        //
-        //   $investments[$investment->user_id]['amount'] = $investment->amount;
-        //   $investments[$investment->user_id]['match'] = ($paymentSum === $investment->amount) ? true : false;
-        //
-        //   var_dump($investments);
-        // }
-
       }
 
-      dump($missmatches);
-
-      // dd($investments);
+      Notification::route('slack', env('LOG_SLACK_WEBHOOK_URL'))
+                   ->notify(new RunningQueue('MissingInvestment', 1));
 
 
     }
+
+    // public function logging() {
+    //   Notification::route('slack', env('LOG_SLACK_WEBHOOK_URL'))
+    //                ->notify(new RunningQueue('MissingInvestment', 1));
+    // }
 
 }

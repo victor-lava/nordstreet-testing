@@ -11,8 +11,10 @@
 |
 */
 
+
 Route::get('/', function () {
     return view('welcome');
 });
 
 Route::get('/test', 'InvestmentController@index');
+Route::get('/log', 'InvestmentController@logging');
